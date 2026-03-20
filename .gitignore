@@ -8,6 +8,8 @@ venv/
 env/
 .venv/
 
+cache/
+
 # Python
 __pycache__/
 *.py[cod]
