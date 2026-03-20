@@ -1,11 +1,13 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import DateTime, String, Float, func, select
 from datetime import datetime
 from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
+
+from pydantic import BaseModel
 
 load_dotenv() #.env
 
@@ -154,6 +156,7 @@ async def get_avg_price(db: AsyncSession = Depends(get_database)):
     count = result.scalar() # 提取一个标量值
     return count
 
+# 分页查询
 @app.get("/book/get_book_list")
 async def get_book_list(
     page: int = 1,
@@ -163,6 +166,79 @@ async def get_book_list(
     result = await db.execute(select(Book).offset((page-1)*page_size).limit(page_size))
     books = result.scalars().all()
     return books
+
+# 用户请求体类型
+class BookBase(BaseModel):
+    id: int
+    bookname: str
+    author: str
+    price: float
+    publisher: str
+
+"""
+今天涨了一记性，您以为是请求体格式问题，结果是路由错了
+"""
+
+# 增 输入信息，新增入库
+@app.post("/book/add_book")
+async def add_book(book: BookBase, db: AsyncSession = Depends(get_database)):
+    # ORM obj -> add -> commit
+    book_obj = Book(**book.__dict__)
+    db.add(book_obj)
+    await db.commit()
+    return book
+
+from pydantic import BaseModel
+# 之前导过 再导一次 看下是不是真的闹鬼了
+
+class BookUpdate(BaseModel):
+    bookname: str
+    author: str
+    price: float
+    publisher: str
+    class Config:
+        schema_extra = {
+            "example": {
+                "bookname": "新书名",
+                "author": "新作者",
+                "price": 29.99,
+                "publisher": "新出版社"
+            }
+        }
+
+
+# 改 先查找，再修改 得有请求体，传新参
+@app.put("/book/update_book/{book_id}")
+async def update_book(book_id: int, data: BookUpdate, db: AsyncSession = Depends(get_database)):
+    db_book = await db.get(Book, book_id)
+    if db_book is None:
+        raise HTTPException(
+            status_code = 404,
+            detail = "您要找的家伙，咱这地儿确实没有。您上谦儿哥那床底下找去。"
+        )
+    # 找到 重新赋值
+    db_book.bookname = data.bookname
+    db_book.author = data.author
+    db_book.price = data.price
+    db_book.publisher = data.publisher
+
+    await db.commit() ###这里边儿不能包馅儿，请求体已经传参了
+    return db_book
+
+
+# 删 先查找，再删除
+@app.delete("/book/delete_book/{book_id}")
+async def delete_book(book_id: int, db: AsyncSession = Depends(get_database)):
+    db_book = await db.get(Book, book_id)
+    if db_book is None:
+        raise HTTPException(
+            status_code = 404,
+            detail = "真没找到"
+        )
+
+    await db.delete(db_book)
+    await db.commit()
+    return {"msg":"得嘞，我这就给您扔喽"}
 
 if __name__ == "__main__":
     import uvicorn
