@@ -154,6 +154,16 @@ async def get_avg_price(db: AsyncSession = Depends(get_database)):
     count = result.scalar() # 提取一个标量值
     return count
 
+@app.get("/book/get_book_list")
+async def get_book_list(
+    page: int = 1,
+    page_size: int = 3,
+    db: AsyncSession = Depends(get_database)
+):
+    result = await db.execute(select(Book).offset((page-1)*page_size).limit(page_size))
+    books = result.scalars().all()
+    return books
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("orm:app",reload=True)
